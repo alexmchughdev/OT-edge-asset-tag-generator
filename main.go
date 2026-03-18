@@ -58,10 +58,28 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Returns a QR code PNG (base64) for any given text
+func qrHandler(w http.ResponseWriter, r *http.Request) {
+	text := r.URL.Query().Get("text")
+	if text == "" {
+		http.Error(w, "missing text param", 400)
+		return
+	}
+	png, err := qrcode.Encode(text, qrcode.Medium, 256)
+	if err != nil {
+		http.Error(w, "qr encode failed", 500)
+		return
+	}
+	qrBase64 := base64.StdEncoding.EncodeToString(png)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"qr_data": qrBase64})
+}
+
 func main() {
 	generateData()
 
 	http.HandleFunc("/api/generate", apiHandler)
+	http.HandleFunc("/api/qr", qrHandler)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		h := history
@@ -114,6 +132,8 @@ const tmpl = `<!DOCTYPE html>
             --copy-flash-bg: #e0f2fe;
             --copy-flash-border: #7dd3fc;
             --icon-stroke: #444;
+            --error-text: #dc2626;
+            --error-bg: #fef2f2;
             --tr: 0.35s;
             color-scheme: light;
         }
@@ -142,6 +162,8 @@ const tmpl = `<!DOCTYPE html>
             --copy-flash-bg: rgba(30,58,95,0.4);
             --copy-flash-border: #2563eb;
             --icon-stroke: #b0b0b4;
+            --error-text: #f87171;
+            --error-bg: rgba(220,38,38,0.1);
             color-scheme: dark;
         }
 
@@ -176,12 +198,7 @@ const tmpl = `<!DOCTYPE html>
             transition: background var(--tr) ease, border-color var(--tr) ease;
         }
 
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-        }
-
+        .header-left { display: flex; align-items: center; gap: 0.6rem; }
         .dfx-logo { width: 34px; height: 34px; flex-shrink: 0; }
         .dfx-logo svg { width: 100%; height: 100%; display: block; }
 
@@ -193,77 +210,50 @@ const tmpl = `<!DOCTYPE html>
             transition: color var(--tr) ease;
         }
 
-        /* ── Theme Toggle: minimalist sun/moon ── */
+        /* ── Theme Toggle ── */
         .theme-btn {
-            width: 36px;
-            height: 36px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            color: var(--text-muted);
+            width: 36px; height: 36px;
+            border: none; background: transparent; cursor: pointer; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; color: var(--text-muted); position: relative;
             transition: color 0.25s ease, background 0.25s ease;
-            position: relative;
         }
 
         .theme-btn:hover { color: var(--accent); background: var(--accent-light); }
 
         .theme-btn svg {
-            width: 20px;
-            height: 20px;
-            position: absolute;
+            width: 20px; height: 20px; position: absolute;
             transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
         }
 
         .theme-btn .icon-sun { opacity: 1; transform: rotate(0deg) scale(1); }
         .theme-btn .icon-moon { opacity: 0; transform: rotate(-60deg) scale(0.5); }
-
         [data-theme="dark"] .theme-btn .icon-sun { opacity: 0; transform: rotate(90deg) scale(0.5); }
         [data-theme="dark"] .theme-btn .icon-moon { opacity: 1; transform: rotate(0deg) scale(1); }
 
         /* ── Content ── */
         .content {
-            flex: 1;
-            max-width: 560px;
-            width: 100%;
-            margin: 0 auto;
-            padding: 2.5rem 1rem 3rem;
-            text-align: center;
+            flex: 1; max-width: 560px; width: 100%;
+            margin: 0 auto; padding: 2.5rem 1rem 3rem; text-align: center;
         }
 
         .page-title {
-            color: var(--accent);
-            font-size: 0.72rem;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            margin-bottom: 1.75rem;
+            color: var(--accent); font-size: 0.72rem; font-weight: 800;
+            text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 1.75rem;
             transition: color var(--tr) ease;
         }
 
         .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 1.75rem 1.5rem;
-            margin-bottom: 2rem;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 14px; padding: 1.75rem 1.5rem; margin-bottom: 2rem;
             box-shadow: var(--shadow-card);
             transition: background var(--tr) ease, border-color var(--tr) ease, box-shadow var(--tr) ease;
         }
 
         .qr-frame {
-            border: 1.5px solid var(--qr-border);
-            padding: 1rem;
-            border-radius: 10px;
-            display: inline-block;
-            margin-bottom: 1.25rem;
-            background: var(--qr-bg);
-            position: relative;
-            cursor: pointer;
+            border: 1.5px solid var(--qr-border); padding: 1rem; border-radius: 10px;
+            display: inline-block; margin-bottom: 1.25rem; background: var(--qr-bg);
+            position: relative; cursor: pointer;
             transition: border-color 0.25s ease, box-shadow 0.25s ease;
         }
 
@@ -271,63 +261,77 @@ const tmpl = `<!DOCTYPE html>
         .qr-frame img { width: 180px; height: 180px; display: block; border-radius: 4px; }
 
         .fs-btn {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: rgba(255,255,255,0.85);
-            backdrop-filter: blur(6px);
-            border: 1px solid rgba(0,0,0,0.06);
-            border-radius: 6px;
-            padding: 5px;
-            cursor: pointer;
-            transition: background 0.2s ease;
+            position: absolute; top: 8px; right: 8px;
+            background: rgba(255,255,255,0.85); backdrop-filter: blur(6px);
+            border: 1px solid rgba(0,0,0,0.06); border-radius: 6px;
+            padding: 5px; cursor: pointer; transition: background 0.2s ease;
         }
 
         .fs-btn:hover { background: rgba(255,255,255,0.95); }
         .fs-btn svg { width: 14px; height: 14px; stroke: #666; stroke-width: 2.5; fill: none; display: block; }
 
+        /* ── ID Display ── */
         .id-display {
-            display: flex;
-            align-items: center;
-            background: var(--bg-input);
-            border: 1.5px solid var(--border);
-            border-radius: 10px;
-            padding: 0.7rem 0.9rem;
-            margin-bottom: 1.25rem;
-            cursor: pointer;
-            transition: background 0.25s ease, border-color 0.25s ease;
-            gap: 0.5rem;
+            display: flex; align-items: center;
+            background: var(--bg-input); border: 1.5px solid var(--border);
+            border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 1.25rem;
+            transition: background 0.25s ease, border-color 0.25s ease; gap: 0.5rem;
         }
 
         .id-display:hover { border-color: var(--border-hover); }
         .id-display.copy-flash { background: var(--copy-flash-bg) !important; border-color: var(--copy-flash-border) !important; }
 
         .id-display code {
-            flex: 1;
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 0.8rem;
-            text-align: left;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            pointer-events: none;
-            color: var(--text-sec);
-            transition: color var(--tr) ease;
+            flex: 1; font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.8rem; text-align: left; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap; color: var(--text-sec);
+            cursor: pointer; transition: color var(--tr) ease;
         }
 
+        .edit-input {
+            flex: 1; font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 0.8rem; color: var(--text); background: transparent;
+            border: none; outline: none; padding: 0; margin: 0; min-width: 0;
+        }
+
+        .id-display.editing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+        .id-display.editing .edit-only,
+        .id-display.editing .copy-only { display: none; }
+        .id-display.edit-error-state { border-color: var(--error-text); box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
+
+        /* ── Error bar ── */
+        .edit-error {
+            display: none; align-items: center; justify-content: space-between;
+            background: var(--error-bg); border-radius: 8px;
+            padding: 0.5rem 0.75rem; margin-top: -0.85rem; margin-bottom: 1rem;
+            gap: 0.5rem;
+        }
+
+        .edit-error.show { display: flex; }
+
+        .edit-error-text {
+            font-size: 0.72rem; font-weight: 600; color: var(--error-text);
+        }
+
+        .regen-btn {
+            display: flex; align-items: center; gap: 0.3rem;
+            background: none; border: 1.5px solid var(--error-text); color: var(--error-text);
+            border-radius: 6px; padding: 0.3rem 0.6rem; cursor: pointer;
+            font-family: inherit; font-size: 0.65rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            transition: background 0.2s ease, color 0.2s ease;
+            white-space: nowrap; flex-shrink: 0;
+        }
+
+        .regen-btn:hover { background: var(--error-text); color: #fff; }
+        .regen-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+        /* ── Button ── */
         .btn-main {
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            padding: 0.85rem;
-            border-radius: 10px;
-            font-family: inherit;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            cursor: pointer;
-            width: 100%;
-            font-size: 0.8rem;
+            background: var(--accent); color: #fff; border: none;
+            padding: 0.85rem; border-radius: 10px; font-family: inherit;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+            cursor: pointer; width: 100%; font-size: 0.8rem;
             transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
         }
 
@@ -335,35 +339,18 @@ const tmpl = `<!DOCTYPE html>
         .btn-main:active { transform: scale(0.98); }
 
         /* ── History ── */
-        .history {
-            border-top: 1px solid var(--border);
-            padding-top: 1.5rem;
-            text-align: left;
-            transition: border-color var(--tr) ease;
-        }
+        .history { border-top: 1px solid var(--border); padding-top: 1.5rem; text-align: left; transition: border-color var(--tr) ease; }
 
         .history-label {
-            font-size: 0.62rem;
-            font-weight: 700;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            margin-bottom: 0.75rem;
-            display: block;
-            text-align: center;
-            transition: color var(--tr) ease;
+            font-size: 0.62rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.75rem;
+            display: block; text-align: center; transition: color var(--tr) ease;
         }
 
         .history-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.75rem 0.5rem;
-            border-bottom: 1px solid var(--hist-border);
-            gap: 0.5rem;
-            cursor: pointer;
-            border-radius: 8px;
-            margin: 0 -0.5rem;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.75rem 0.5rem; border-bottom: 1px solid var(--hist-border);
+            gap: 0.5rem; cursor: pointer; border-radius: 8px; margin: 0 -0.5rem;
             transition: background 0.2s ease, border-color var(--tr) ease;
         }
 
@@ -374,32 +361,17 @@ const tmpl = `<!DOCTYPE html>
         .h-info { display: flex; flex-direction: column; pointer-events: none; gap: 2px; min-width: 0; flex: 1; }
 
         .h-id {
-            font-family: 'JetBrains Mono', ui-monospace, monospace;
-            font-size: 0.75rem;
-            color: var(--text-sec);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            transition: color var(--tr) ease;
+            font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.75rem;
+            color: var(--text-sec); overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; transition: color var(--tr) ease;
         }
 
-        .h-ts {
-            font-size: 0.62rem;
-            color: var(--text-muted);
-            font-weight: 600;
-            letter-spacing: 0.02em;
-            transition: color var(--tr) ease;
-        }
+        .h-ts { font-size: 0.62rem; color: var(--text-muted); font-weight: 600; letter-spacing: 0.02em; transition: color var(--tr) ease; }
 
         .icon-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 6px;
-            color: var(--text-muted);
-            border-radius: 6px;
+            background: none; border: none; cursor: pointer; padding: 6px;
+            color: var(--text-muted); border-radius: 6px; flex-shrink: 0;
             transition: color 0.2s ease, background 0.2s ease;
-            flex-shrink: 0;
         }
 
         .icon-btn:hover { color: var(--accent); background: var(--accent-light); }
@@ -407,74 +379,40 @@ const tmpl = `<!DOCTYPE html>
 
         /* ── Modal ── */
         #modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: var(--modal-bg);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            z-index: 2000;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            transition: background var(--tr) ease;
+            display: none; position: fixed; inset: 0; background: var(--modal-bg);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            z-index: 2000; flex-direction: column; align-items: center;
+            justify-content: center; padding: 20px; transition: background var(--tr) ease;
         }
 
         #modal.show { display: flex; }
 
         #modal img {
-            width: 80vw;
-            max-width: 420px;
-            max-height: 420px;
-            object-fit: contain;
-            aspect-ratio: 1/1;
-            image-rendering: pixelated;
-            border-radius: 12px;
-            box-shadow: 0 8px 40px rgba(0,0,0,0.1);
+            width: 80vw; max-width: 420px; max-height: 420px;
+            object-fit: contain; aspect-ratio: 1/1; image-rendering: pixelated;
+            border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,0.1);
         }
 
         .close-fs {
-            position: absolute;
-            top: 1rem;
-            right: 1.25rem;
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            cursor: pointer;
-            font-size: 1.25rem;
-            color: var(--text-muted);
-            transition: all 0.2s ease;
+            position: absolute; top: 1rem; right: 1.25rem; width: 40px; height: 40px;
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+            background: var(--bg-card); border: 1px solid var(--border); cursor: pointer;
+            font-size: 1.25rem; color: var(--text-muted); transition: all 0.2s ease;
         }
 
         .close-fs:hover { color: var(--text); border-color: var(--border-hover); }
 
         /* ── Toast ── */
         #toast {
-            position: fixed;
-            bottom: 1.5rem;
-            left: 50%;
+            position: fixed; bottom: 1.5rem; left: 50%;
             transform: translateX(-50%) translateY(80px);
-            background: var(--toast-bg);
-            color: var(--toast-text);
-            padding: 0.65rem 1.25rem;
-            border-radius: 10px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            opacity: 0;
+            background: var(--toast-bg); color: var(--toast-text);
+            padding: 0.65rem 1.25rem; border-radius: 10px; font-size: 0.8rem;
+            font-weight: 600; opacity: 0;
             transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-                        opacity 0.35s ease,
-                        background var(--tr) ease,
-                        color var(--tr) ease;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
-            z-index: 3000;
-            white-space: nowrap;
-            pointer-events: none;
+                        opacity 0.35s ease, background var(--tr) ease, color var(--tr) ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12); z-index: 3000;
+            white-space: nowrap; pointer-events: none;
         }
 
         #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -505,6 +443,7 @@ const tmpl = `<!DOCTYPE html>
             .qr-frame img { width: 150px; height: 150px; }
             .id-display { padding: 0.6rem 0.75rem; }
             .id-display code { font-size: 0.7rem; }
+            .edit-input { font-size: 0.7rem; }
             .btn-main { padding: 0.75rem; font-size: 0.75rem; border-radius: 8px; }
             .h-id { font-size: 0.68rem; }
             .h-ts { font-size: 0.58rem; }
@@ -514,6 +453,7 @@ const tmpl = `<!DOCTYPE html>
         @media (max-width: 340px) {
             .qr-frame img { width: 130px; height: 130px; }
             .id-display code { font-size: 0.62rem; }
+            .edit-input { font-size: 0.62rem; }
         }
     </style>
 </head>
@@ -544,14 +484,10 @@ const tmpl = `<!DOCTYPE html>
         <button class="theme-btn" id="themeToggle" aria-label="Toggle dark mode">
             <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="5"/>
-                <line x1="12" y1="1" x2="12" y2="3"/>
-                <line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/>
-                <line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
             </svg>
             <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
@@ -568,11 +504,22 @@ const tmpl = `<!DOCTYPE html>
                     <svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
                 </div>
             </div>
-            <div class="id-display" id="mainIdBox" onclick="handleCopy('currentId', this)">
-                <code id="currentId">{{.UUID}}</code>
-                <div class="icon-btn">
+            <div class="id-display" id="mainIdBox">
+                <code id="currentId" onclick="handleCopy('currentId', document.getElementById('mainIdBox'))">{{.UUID}}</code>
+                <input type="text" id="editInput" class="edit-input" style="display:none" autocomplete="off" spellcheck="false">
+                <div class="icon-btn edit-only" id="editBtn" onclick="startEdit()" title="Edit tag">
+                    <svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                </div>
+                <div class="icon-btn copy-only" id="copyBtn" onclick="handleCopy('currentId', document.getElementById('mainIdBox'))">
                     <svg viewBox="0 0 24 24"><path d="M8 4v12a2 2 0 002 2h8a2 2 0 002-2V7.242a2 2 0 00-.586-1.414l-3.242-3.242A2 2 0 0014.758 2H10a2 2 0 00-2 2z"/><path d="M16 18v2a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2"/></svg>
                 </div>
+            </div>
+            <div class="edit-error" id="editError">
+                <span class="edit-error-text">Invalid tag</span>
+                <button class="regen-btn" onclick="regenFromError()" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                    Regenerate
+                </button>
             </div>
             <button class="btn-main" onclick="generate()">Generate Tag</button>
         </div>
@@ -602,59 +549,36 @@ const tmpl = `<!DOCTYPE html>
         (function() {
             var manual = localStorage.getItem('dfx-theme-manual');
             var saved = localStorage.getItem('dfx-theme');
-            if (manual && saved) {
-                setTheme(saved);
-            } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                setTheme('dark');
-            } else {
-                setTheme('light');
-            }
+            if (manual && saved) { setTheme(saved); }
+            else if (window.matchMedia('(prefers-color-scheme: dark)').matches) { setTheme('dark'); }
+            else { setTheme('light'); }
         })();
 
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
-            if (!localStorage.getItem('dfx-theme-manual')) {
-                setTheme(e.matches ? 'dark' : 'light');
-            }
+            if (!localStorage.getItem('dfx-theme-manual')) setTheme(e.matches ? 'dark' : 'light');
         });
 
         toggleBtn.addEventListener('click', function() {
-            var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            setTheme(next);
+            setTheme(html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
             localStorage.setItem('dfx-theme-manual', 'true');
         });
 
-        /* ── SVG icons for copy state ── */
+        /* ── SVGs ── */
         var checkSvg = '<path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>';
         var copySvg = '<path d="M8 4v12a2 2 0 002 2h8a2 2 0 002-2V7.242a2 2 0 00-.586-1.414l-3.242-3.242A2 2 0 0014.758 2H10a2 2 0 00-2 2z"/><path d="M16 18v2a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2"/>';
 
-        /* ─────────────────────────────────────────────
-           Toast: single global timer.
-           Every call resets the countdown to a full
-           2.5 s so rapid copies never cut it short.
-           ───────────────────────────────────────────── */
+        /* ── Toast ── */
         var toastTimer = null;
         var toastEl = document.getElementById('toast');
 
         function showToast() {
             if (toastTimer) clearTimeout(toastTimer);
-
-            // If already visible just reset the timer — no flicker
-            if (!toastEl.classList.contains('show')) {
-                toastEl.classList.add('show');
-            }
-
-            toastTimer = setTimeout(function() {
-                toastEl.classList.remove('show');
-                toastTimer = null;
-            }, 2500);
+            if (!toastEl.classList.contains('show')) toastEl.classList.add('show');
+            toastTimer = setTimeout(function() { toastEl.classList.remove('show'); toastTimer = null; }, 2500);
         }
 
-        /* ─────────────────────────────────────────────
-           Flash: EXCLUSIVE — only one element can be
-           flashed at a time. A new copy cancels the
-           previous flash immediately.
-           ───────────────────────────────────────────── */
-        var activeFlash = null;   // { el, svg, timer }
+        /* ── Flash: exclusive, only targets .copy-only svg ── */
+        var activeFlash = null;
 
         function clearActiveFlash() {
             if (!activeFlash) return;
@@ -665,53 +589,157 @@ const tmpl = `<!DOCTYPE html>
         }
 
         function flashElement(el) {
-            // Cancel any existing flash first
             clearActiveFlash();
-
             el.classList.add('copy-flash');
-            var svg = el.querySelector('.icon-btn svg') || el.querySelector('svg');
+            var svg = el.querySelector('.copy-only svg');
             if (svg) svg.innerHTML = checkSvg;
-
             var timer = setTimeout(function() {
                 el.classList.remove('copy-flash');
                 if (svg) svg.innerHTML = copySvg;
                 activeFlash = null;
             }, 1200);
-
             activeFlash = { el: el, svg: svg, timer: timer };
         }
 
         /* ── Copy ── */
         function handleCopy(id, el) {
+            if (isEditing) return;
             handleCopyText(document.getElementById(id).innerText, el);
         }
 
         function handleCopyText(text, el) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(function() {
-                    showToast();
-                    flashElement(el);
+                    showToast(); flashElement(el);
                 }).catch(function() { fallbackCopy(text, el); });
-            } else {
-                fallbackCopy(text, el);
-            }
+            } else { fallbackCopy(text, el); }
         }
 
         function fallbackCopy(text, el) {
             var ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.cssText = 'position:fixed;left:-9999px';
-            document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
-            try {
-                if (document.execCommand('copy')) {
-                    showToast();
-                    flashElement(el);
-                }
-            } catch(e) { console.error(e); }
+            ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            try { if (document.execCommand('copy')) { showToast(); flashElement(el); } }
+            catch(e) { console.error(e); }
             document.body.removeChild(ta);
         }
+
+        /* ── Edit ── */
+        var isEditing = false;
+        var dfxPattern = /^dfx-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        function clearEditState() {
+            isEditing = false;
+            var box = document.getElementById('mainIdBox');
+            var code = document.getElementById('currentId');
+            var input = document.getElementById('editInput');
+            var err = document.getElementById('editError');
+            input.style.display = 'none';
+            code.style.display = '';
+            box.classList.remove('editing', 'edit-error-state');
+            err.classList.remove('show');
+        }
+
+        function startEdit() {
+            if (isEditing) return;
+            isEditing = true;
+
+            var box = document.getElementById('mainIdBox');
+            var code = document.getElementById('currentId');
+            var input = document.getElementById('editInput');
+            var err = document.getElementById('editError');
+
+            err.classList.remove('show');
+            box.classList.remove('edit-error-state');
+            input.value = code.innerText;
+            code.style.display = 'none';
+            input.style.display = 'block';
+            box.classList.add('editing');
+            input.focus();
+            input.select();
+        }
+
+        async function finishEdit() {
+            if (!isEditing) return;
+
+            var box = document.getElementById('mainIdBox');
+            var code = document.getElementById('currentId');
+            var input = document.getElementById('editInput');
+            var err = document.getElementById('editError');
+            var val = input.value.trim().toLowerCase();
+
+            // If unchanged, just close
+            if (val === code.innerText) {
+                clearEditState();
+                return;
+            }
+
+            // Validate
+            if (!val || !dfxPattern.test(val)) {
+                box.classList.add('edit-error-state');
+                err.classList.add('show');
+                return; // Stay in edit mode so user can fix or click regenerate
+            }
+
+            // Valid — update tag, fetch new QR, update history
+            err.classList.remove('show');
+            box.classList.remove('edit-error-state');
+            isEditing = false;
+            code.innerText = val;
+            input.style.display = 'none';
+            code.style.display = '';
+            box.classList.remove('editing');
+
+            // Fetch matching QR from server
+            try {
+                var res = await fetch('/api/qr?text=' + encodeURIComponent(val));
+                var data = await res.json();
+                document.getElementById('qrImg').src = 'data:image/png;base64,' + data.qr_data;
+            } catch(e) { console.error('QR fetch failed:', e); }
+
+            // Update local history
+            var ts = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            var saved = localStorage.getItem('dfx_history_v3');
+            var hist = saved ? JSON.parse(saved) : [];
+            hist.unshift({ uuid: val, timestamp: ts });
+            if (hist.length > 5) hist = hist.slice(0, 5);
+            saveHistory(hist);
+        }
+
+        function cancelEdit() {
+            clearEditState();
+        }
+
+        // Regenerate from the error state — user clicked the loop button
+        async function regenFromError() {
+            clearEditState();
+            await generate();
+        }
+
+        document.getElementById('editInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); finishEdit(); }
+            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+        });
+
+        // Live clear error as user types valid input
+        document.getElementById('editInput').addEventListener('input', function() {
+            var err = document.getElementById('editError');
+            var box = document.getElementById('mainIdBox');
+            if (dfxPattern.test(this.value.trim())) {
+                err.classList.remove('show');
+                box.classList.remove('edit-error-state');
+            }
+        });
+
+        document.getElementById('editInput').addEventListener('blur', function() {
+            setTimeout(function() {
+                if (!isEditing) return;
+                // If still in error state, user clicked away — cancel
+                var val = document.getElementById('editInput').value.trim();
+                if (dfxPattern.test(val)) { finishEdit(); }
+                else { cancelEdit(); }
+            }, 200);
+        });
 
         /* ── History ── */
         function saveHistory(data) {
@@ -732,13 +760,17 @@ const tmpl = `<!DOCTYPE html>
                 h += '<div class="history-row" onclick="handleCopyText(\'' + item.uuid + '\', this)">' +
                      '<div class="h-info"><span class="h-ts">' + item.timestamp + '</span>' +
                      '<span class="h-id">' + item.uuid + '</span></div>' +
-                     '<div class="icon-btn"><svg viewBox="0 0 24 24">' + copySvg + '</svg></div></div>';
+                     '<div class="icon-btn copy-only"><svg viewBox="0 0 24 24">' + copySvg + '</svg></div></div>';
             });
             list.innerHTML = h;
         }
 
         /* ── Generate ── */
         async function generate() {
+            // Always clean up any edit state first
+            clearEditState();
+            clearActiveFlash();
+
             var res = await fetch('/api/generate');
             var data = await res.json();
             document.getElementById('qrImg').src = 'data:image/png;base64,' + data.qr_data;
@@ -752,9 +784,7 @@ const tmpl = `<!DOCTYPE html>
             document.getElementById('modal').classList.add('show');
         }
 
-        function closeFullscreen() {
-            document.getElementById('modal').classList.remove('show');
-        }
+        function closeFullscreen() { document.getElementById('modal').classList.remove('show'); }
 
         window.onload = loadHistory;
     </script>
