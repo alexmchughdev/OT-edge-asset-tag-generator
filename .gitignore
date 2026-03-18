@@ -23,3 +23,10 @@ Thumbs.db
 *.swo
 *.tar
 *.tar.gz
+
+# Binaries
+dfx-gen
+__debug_bin*
+
+# Go specific
+go.sum
