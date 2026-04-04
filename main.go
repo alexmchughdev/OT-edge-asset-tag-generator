@@ -390,7 +390,7 @@ const tmpl = `<!DOCTYPE html>
         #modal.show { display: flex; }
 
         #modal img {
-            width: 80vw; max-width: 420px; max-height: 420px;
+            width: min(95vmin, 800px); max-width: 800px; max-height: 800px;
             object-fit: contain; aspect-ratio: 1/1; image-rendering: pixelated;
             border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,0.1);
         }
