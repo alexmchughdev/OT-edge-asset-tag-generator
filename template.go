@@ -329,7 +329,8 @@ const tmpl = `<!DOCTYPE html>
         }
         .device-row:hover { background: var(--hist-hover); }
         .device-row:last-child { border-bottom: none; }
-        .device-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+        .device-row.copy-flash { background: var(--copy-flash-bg) !important; }
+        .device-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; cursor: pointer; }
         .device-name {
             font-size: 0.82rem; font-weight: 600; color: var(--text);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -345,7 +346,6 @@ const tmpl = `<!DOCTYPE html>
         .device-actions { display: flex; align-items: center; gap: 0.1rem; flex-shrink: 0; padding-top: 1px; }
         .devices-empty { text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.8rem; }
 
-        /* ── Env Badges ── */
         .env-badge {
             display: inline-flex; align-items: center; padding: 2px 7px;
             border-radius: 4px; font-size: 0.6rem; font-weight: 700;
@@ -369,7 +369,6 @@ const tmpl = `<!DOCTYPE html>
         [data-theme="dark"] .env-sgn     { background: rgba(20,184,166,0.15); }
         [data-theme="dark"] .env-custom  { background: rgba(107,114,128,0.15);}
 
-        /* ── Dialog Overlay ── */
         .dialog-overlay {
             display: none; position: fixed; inset: 0;
             background: rgba(0,0,0,0.4); backdrop-filter: blur(6px);
@@ -396,7 +395,6 @@ const tmpl = `<!DOCTYPE html>
             margin-bottom: 1.25rem; padding-right: 2rem;
         }
 
-        /* ── Auth Tabs ── */
         .auth-tabs {
             display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.25rem;
             transition: border-color var(--tr) ease;
@@ -410,7 +408,6 @@ const tmpl = `<!DOCTYPE html>
         }
         .auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-        /* ── Form Elements ── */
         .form-group { margin-bottom: 0.9rem; }
         .form-label {
             display: block; font-size: 0.68rem; font-weight: 700;
@@ -468,7 +465,6 @@ const tmpl = `<!DOCTYPE html>
             transition: background var(--tr) ease, border-color var(--tr) ease;
         }
 
-        /* ── QR Fullscreen Modal ── */
         #modal {
             display: none; position: fixed; inset: 0; background: var(--modal-bg);
             backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
@@ -489,21 +485,19 @@ const tmpl = `<!DOCTYPE html>
         }
         .close-fs:hover { color: var(--text); border-color: var(--border-hover); }
 
-        /* ── Toast ── */
         #toast {
             position: fixed; bottom: 1.5rem; left: 50%;
             transform: translateX(-50%) translateY(80px);
             background: var(--toast-bg); color: var(--toast-text);
             padding: 0.65rem 1.25rem; border-radius: 10px; font-size: 0.8rem;
             font-weight: 600; opacity: 0;
-            transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1),
+            transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
                         opacity 0.35s ease, background var(--tr) ease, color var(--tr) ease;
             box-shadow: 0 4px 20px rgba(0,0,0,0.12); z-index: 3000;
             white-space: nowrap; pointer-events: none;
         }
         #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-        /* ── Animations ── */
         @keyframes fadeInUp {
             from { opacity: 0; transform: translateY(14px); }
             to   { opacity: 1; transform: translateY(0); }
@@ -813,7 +807,7 @@ const tmpl = `<!DOCTYPE html>
         function handleCopyText(text, el) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(function() {
-                    showToast('Copied to clipboard'); flashElement(el);
+                    showToast(); flashElement(el);
                 }).catch(function() { fallbackCopy(text, el); });
             } else { fallbackCopy(text, el); }
         }
@@ -822,7 +816,7 @@ const tmpl = `<!DOCTYPE html>
             var ta = document.createElement('textarea');
             ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
             document.body.appendChild(ta); ta.focus(); ta.select();
-            try { if (document.execCommand('copy')) { showToast('Copied to clipboard'); flashElement(el); } }
+            try { if (document.execCommand('copy')) { showToast(); flashElement(el); } }
             catch(e) { console.error(e); }
             document.body.removeChild(ta);
         }
@@ -1211,7 +1205,7 @@ const tmpl = `<!DOCTYPE html>
                     ? '<span class="device-by">by ' + escHtml(d.user_email.split('@')[0]) + '</span>'
                     : '';
                 h += '<div class="device-row" data-id="' + d.id + '" data-tag="' + escHtml(d.tag) + '">' +
-                    '<div class="device-info">' +
+                    '<div class="device-info" onclick="handleCopyText(\'' + escHtml(d.tag) + '\', this.parentElement)">' +
                     '<span class="device-name">' + escHtml(d.device_name) + '</span>' +
                     (d.serial_number ? '<span style="font-size:0.65rem; color:var(--text-muted);">S/N: ' + escHtml(d.serial_number) + '</span>' : '') +
                     '<div class="device-meta">' + envBadge(d.environment) + sharedBadge + '</div>' +
@@ -1221,11 +1215,11 @@ const tmpl = `<!DOCTYPE html>
                     '</div>' +
                     '<div class="device-actions">' +
                     '<div class="icon-btn" onclick="showDeviceQR(this.closest(\'.device-row\').dataset.tag)" title="Show QR">' + qrIconSvg + '</div>' +
+                    '<div class="icon-btn copy-only" onclick="event.stopPropagation();handleCopyText(\'' + escHtml(d.tag) + '\', this.closest(\'.device-row\'))" title="Copy">' +
+                    '<svg viewBox="0 0 24 24">' + copySvg + '</svg></div>' +
                     '<div class="icon-btn" onclick="openEditDevice(+this.closest(\'.device-row\').dataset.id)" title="Edit">' +
                     '<svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>' +
                     '</div>' +
-                    '<div class="icon-btn copy-only" onclick="event.stopPropagation();handleCopyText(\'' + escHtml(d.tag) + '\', this.closest(\'.device-row\'))" title="Copy">' +
-                    '<svg viewBox="0 0 24 24">' + copySvg + '</svg></div>' +
                     '<div class="icon-btn danger" onclick="confirmDeleteDevice(+this.closest(\'.device-row\').dataset.id)" title="Delete">' +
                     '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>' +
                     '</div>' +
