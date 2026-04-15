@@ -4,7 +4,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
+	"log"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -122,4 +127,59 @@ func updateLastActive(userID int64) {
 func deleteInactiveUsers() {
 	db.Exec(`DELETE FROM users
 		WHERE COALESCE(last_active_at, created_at) < datetime('now', '-12 months')`)
+}
+
+// backupDB creates a clean copy of the database using VACUUM INTO, which is
+// safe to run against a live database. Backups are stored in a /backups/
+// subdirectory next to the main database file. Only the 7 most recent are kept.
+func backupDB() {
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./dfx.db"
+	}
+	backupDir := filepath.Join(filepath.Dir(dbPath), "backups")
+	if err := os.MkdirAll(backupDir, 0700); err != nil {
+		log.Printf("backup: could not create backup directory: %v", err)
+		return
+	}
+	dest := filepath.Join(backupDir, fmt.Sprintf("dfx-%s.db", time.Now().Format("2006-01-02")))
+	if _, err := db.Exec("VACUUM INTO ?", dest); err != nil {
+		log.Printf("backup: VACUUM INTO failed: %v", err)
+		return
+	}
+	log.Printf("backup: wrote %s", dest)
+	pruneBackups(backupDir, 7)
+}
+
+// pruneBackups removes old backups keeping only the most recent n files.
+func pruneBackups(dir string, keep int) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") {
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	sort.Strings(files) // lexicographic = chronological for YYYY-MM-DD names
+	for len(files) > keep {
+		os.Remove(files[0])
+		files = files[1:]
+	}
+}
+
+// startBackupSchedule runs a daily backup at 02:00, one hour before the
+// inactive-account cleanup, so there is always a recent backup before any
+// deletions occur.
+func startBackupSchedule() {
+	go func() {
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 2, 0, 0, 0, now.Location())
+			time.Sleep(time.Until(next))
+			backupDB()
+		}
+	}()
 }

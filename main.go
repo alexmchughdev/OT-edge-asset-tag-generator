@@ -76,6 +76,8 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	generateData()
+	backupDB() // take an immediate backup on every startup
+	startBackupSchedule()
 	startInactiveAccountCleanup()
 
 	http.HandleFunc("GET /api/generate", apiHandler)
